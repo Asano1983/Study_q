@@ -94,7 +94,9 @@
  if[not .perm.isNamespace[ns];:()];
  raze(` sv' ns,/:system"f ",string ns), .z.s'[` sv' ns,/:system "v ",string ns]}
 
-.perm.hideNamespace:{[ns].perm.hideFunction each ns,.perm.nsFuncs[ns]} 
+.perm.hideNamespace:{[ns]
+ .perm.hideFunction each ns,.perm.nsFuncs[ns];
+ } 
 
 .perm.queryLog:([]time:`timestamp$();handle:`int$();user:`$();class:`$();hostname:`$();ip:`$();query:();valid:`boolean$();error:())
 
