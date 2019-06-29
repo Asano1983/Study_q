@@ -29,8 +29,6 @@
  if[not ".perm.executeSproc"~.perm.toString first .perm.parse query;'"You only have permission to execute stored procedures:.perm.executeSproc[sprocName;(list;of;params)]"];
  value query}
 
-.perm.is.select:{[x] (count[x] in 5 6 7) and (?)~first x}
-
 //identify whether a variable name is a namespace
 .perm.isNamespace:{[x] if[-11h~type x;x:value x]; if[not 99h~type x;:0b];(1#x)~enlist[`]!enlist(::)}
 
@@ -38,10 +36,16 @@
 .perm.nsTables:{[ns]
  if[ns~`.;:system"a ."];
  if[not .perm.isNamespace[ns];:()];
- raze(` sv' ns,/:system"a ",string ns),.z.s'[` sv' ns,/:system"v ",string ns]}
+ raze(` sv' ns,/:system"a ",string ns), .z.s'[` sv' ns,/:system "v ",string ns]}
 
 //Get a list of every table in every namespace
 .perm.allTables:{[] raze .perm.nsTables each `$".",/:string each`,key[`]}
+
+.perm.is.select:{[x] (any x~/: .perm.allTables[]) or (count[x] in 5 6 7) and (?)~first x}
+.perm.is.update:{[x] (5=count x) and ((!)~first x) and 99h=type last x}
+.perm.is.delete:{[x] (5=count x) and ((!)~first x) and 11h=type last x}
+.perm.is.insert:{[x] (insert)~first x}
+.perm.is.upsert:{[x] (.[;();,;])~first x}
 
 .perm.isTableQuery:{[x] any (value each `.perm.is,/:1_key[.perm.is])@\:x}
 
@@ -51,6 +55,7 @@
 
 .perm.tables:([]table:`$();user:`$();permission:`$())
 .perm.queries:`select`update`upsert`insert`delete;
+
 .perm.grant:{[t;u;p] if[not p in .perm.queries;'"Not a valid table operation"]; `.perm.tables insert (t;u;p);}
 .perm.revoke:{[t;u;p] delete from `.perm.tables where table=t,user=u,permission=p;}
 .perm.grantAll:{[t;u] .perm.grant[t;u;] each .perm.queries;}
@@ -68,10 +73,28 @@
  if[not qt in p;'"You do not have ",string[qt]," permission on ",string[table]];
  .perm.readOnly[(eval;query)]}
 
+.perm.hiddenFuncs:();
+.perm.hideFunction:{`.perm.hiddenFuncs?x;}
+
+.perm.hidden:{[query]
+ if[any .perm.parse[query] ~/: raze {(x;(value;x);(value;enlist x);(value;(value;enlist x)))} each .perm.hiddenFuncs;'"You don't have permission to view this function/variable"]}
+
+.perm.blockInjection:{[query] if[any (::)~/:.perm.parse query;'"Invalid Query"]}
+
 .perm.pg.poweruser:{[user;query]
  if[".perm.executeSproc"~.perm.toString first .perm.parse query; :value query];
- if[.perm.isTableQuery q:.perm.parse[query]; :.perm.readOnly .perm.validateTableQuery[user;q]];
+ q:.perm.parse[query];
+ if[.perm.isTableQuery q; :.perm.validateTableQuery[user;q]];
+ .perm.hidden query;
+ .perm.blockInjection query;
  .perm.readOnly query} 
+
+.perm.nsFuncs:{[ns]
+ if[ns~`.;:system"f ."];
+ if[not .perm.isNamespace[ns];:()];
+ raze(` sv' ns,/:system"f ",string ns), .z.s'[` sv' ns,/:system "v ",string ns]}
+
+.perm.hideNamespace:{[ns].perm.hideFunction each ns,.perm.nsFuncs[ns]} 
 
 .perm.queryLog:([]time:`timestamp$();handle:`int$();user:`$();class:`$();hostname:`$();ip:`$();query:();valid:`boolean$();error:())
 
@@ -98,9 +121,10 @@
 .perm.grantAccess:{[usr] .perm.logAccess[.z.w;usr;`connect;""]; 1b}
 
 .z.pw:{[user;pwd]
- $[not user in key .perm.users;.perm.blockAccess[user;"User does not exist"]; not .perm.encrypt[user;pwd]~.perm.users[user][`password]; .perm.blockAccess[user;"Password Authentication Failed"];
- .perm.grantAccess[user]]} 
- 
+ if[not user in key .perm.users; :.perm.blockAccess[user;"User does not exist"]];
+ if[not .perm.encrypt[user;pwd]~.perm.users[user][`password]; :.perm.blockAccess[user;"Password Authentication Failed"]];
+  .perm.grantAccess[user]} 
+
 .z.pg:{[query]
  user:.z.u;
  class:.perm.getClass[user];
